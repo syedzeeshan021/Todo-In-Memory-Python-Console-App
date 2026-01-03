@@ -113,6 +113,24 @@ A user wants to remove tasks that are no longer relevant or have been completed 
 
 ---
 
+### User Story 6 - Interactive Mode Features (Priority: P2)
+
+A user wants enhanced interactive functionality to efficiently manage tasks with additional utilities like searching, statistics, and detailed views, making the application more user-friendly and productive.
+
+**Why this priority**: These features significantly improve the user experience and make the application more practical for daily use.
+
+**Independent Test**: Can be fully tested by using each interactive command and verifying the expected output.
+
+**Acceptance Scenarios**:
+
+1. **Given** user is in interactive mode, **When** user runs `show 1` command, **Then** detailed information about task with ID 1 is displayed
+2. **Given** user is in interactive mode, **When** user runs `stats` command, **Then** statistics about total tasks, completed, incomplete, and completion rate are displayed
+3. **Given** user is in interactive mode, **When** user runs `search python` command, **Then** all tasks containing "python" in title or description are displayed
+4. **Given** user is in interactive mode, **When** user runs `clear` command, **Then** all tasks are removed from the list and task counter is reset
+5. **Given** user is in interactive mode, **When** user runs `ls` command (alias for list), **Then** all tasks are displayed (same as list command)
+
+---
+
 ### Edge Cases
 
 - What happens when a user tries to mark a non-existent task as complete? (Should show "Task with ID X not found")
@@ -121,6 +139,8 @@ A user wants to remove tasks that are no longer relevant or have been completed 
 - How does the system handle very long task descriptions or titles? (Should enforce max 200 chars for title, 1000 for description)
 - What happens when all tasks are deleted and the user tries to list them? (Should show "No tasks available")
 - What happens when a user enters invalid command format? (Should show help or error message)
+- What happens when a user tries to search for a non-existent keyword? (Should show "No matching tasks found")
+- What happens when a user tries to show details for a non-existent task? (Should show "Task with ID X not found")
 
 ## Requirements *(mandatory)*
 
@@ -138,12 +158,20 @@ A user wants to remove tasks that are no longer relevant or have been completed 
 - **FR-010**: System MUST maintain task status (complete/incomplete) during the application session and persist changes in memory
 - **FR-011**: System MUST provide an exit command (`quit` or `exit`) to terminate the application loop
 - **FR-012**: System MUST validate input with length limits (title: max 200 chars, description: max 1000 chars) and reject invalid inputs
+- **FR-013**: System MUST provide interactive mode when run without arguments that allows continuous command entry
+- **FR-014**: System MUST support command aliases: `ls` for `list`, `del` for `delete`, `done` for `complete`, `undone` for `incomplete`
+- **FR-015**: System MUST provide a `show <id>` command to display detailed task information including ID, title, description, and status
+- **FR-016**: System MUST provide a `stats` command to display statistics including total tasks, completed tasks, incomplete tasks, and completion rate percentage
+- **FR-017**: System MUST provide a `search <keyword>` command to find and display tasks containing the keyword in title or description
+- **FR-018**: System MUST provide a `clear` command to remove all tasks from the list and reset the task counter
+- **FR-019**: System MUST provide enhanced help information with detailed command descriptions and usage tips
 
 ### Key Entities *(include if feature involves data)*
 
 - **Task**: Represents a single todo item with attributes: id (auto-generated integer unique identifier), title (required string with max 200 characters), description (optional string with max 1000 characters), status (boolean indicating complete/incomplete)
 - **Task List**: Collection of Task class instances stored in memory during application runtime
 - **TaskManager**: Class that manages the collection of Task objects, handles operations (add, list, update, delete, complete), and provides validation
+- **InteractiveMode**: Component that provides continuous command prompt, command parsing, aliases support, and enhanced user experience features
 
 ## Clarifications
 
