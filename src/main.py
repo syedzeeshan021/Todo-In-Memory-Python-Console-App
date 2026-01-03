@@ -340,15 +340,10 @@ def handle_incomplete_command(task_manager: TaskManager, args) -> None:
         print(f"Error: Task with ID {args.id} not found")
 
 
-def main():
+def parse_command_line_args():
     """
-    Main function to run the Todo application.
-    Sets up the argument parser and handles commands.
+    Set up and parse command line arguments.
     """
-    # Create the task manager instance
-    task_manager = TaskManager()
-
-    # Set up the argument parser
     parser = argparse.ArgumentParser(
         description="Todo In-Memory Python Console App",
         prog="todo"
@@ -389,16 +384,329 @@ def main():
     incomplete_parser.add_argument('id', type=int, help='ID of the task to mark as incomplete')
     incomplete_parser.set_defaults(func=handle_incomplete_command)
 
-    # Parse the arguments
-    args = parser.parse_args()
+    return parser
 
-    # If no command is provided, show help
-    if args.command is None:
-        parser.print_help()
-        return
 
-    # Execute the appropriate function based on the command
-    args.func(task_manager, args)
+def run_interactive_mode(task_manager):
+    """
+    Run the interactive mode where users can enter commands continuously.
+    Enhanced with better parsing, command history, and user experience.
+    """
+    print("Todo Application Interactive Mode")
+    print("Type 'help' for available commands, 'quit' or 'exit' to exit")
+    print("Commands can be entered without the 'python src/main.py' prefix")
+    print("-" * 70)
+
+    # Command history for reference (not actually storing but showing the concept)
+    command_history = []
+
+    while True:
+        try:
+            # Get user input
+            user_input = input("todo> ").strip()
+
+            # Add to command history if not empty
+            if user_input:
+                command_history.append(user_input)
+
+            if not user_input:
+                continue
+
+            # Handle special commands
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print("Goodbye!")
+                break
+            elif user_input.lower() in ['help', '?']:
+                print("\nAvailable commands:")
+                print("  add <title> [description]     - Add a new task")
+                print("  list | ls                     - List all tasks")
+                print("  update <id> --title <text> --description <text> - Update a task")
+                print("  delete <id> | del <id>        - Delete a task")
+                print("  complete <id> | done <id>     - Mark task as complete [X]")
+                print("  incomplete <id> | undone <id> - Mark task as incomplete [ ]")
+                print("  show <id>                     - Show details of a specific task")
+                print("  clear                         - Clear all tasks")
+                print("  stats                         - Show statistics")
+                print("  search <keyword>              - Search tasks by title/description")
+                print("  help | ?                      - Show this help")
+                print("  quit | exit | q               - Exit the application")
+                print("\nTips:")
+                print("  - Use quotes for titles/descriptions with spaces: add \"My Task\" \"Description here\"")
+                print("  - Multiple aliases available for convenience")
+                print("  - Press Ctrl+C to exit anytime")
+                continue
+            elif user_input.lower() in ['list', 'ls']:
+                # Handle list command
+                args = argparse.Namespace()
+                handle_list_command(task_manager, args)
+
+                # Show statistics after listing
+                if task_manager.tasks:
+                    total = len(task_manager.tasks)
+                    completed = len([t for t in task_manager.tasks if t.status])
+                    incomplete = total - completed
+                    print(f"\nTotal: {total} | Completed: {completed} | Incomplete: {incomplete}")
+                else:
+                    print("No tasks available")
+                continue
+            elif user_input.lower().startswith('add '):
+                # Handle add command - parse quoted strings properly
+                command_part = user_input[4:]  # Remove 'add ' prefix
+                title = ""
+                description = ""
+
+                # Parse quoted strings properly
+                i = 0
+                in_quotes = False
+                current_string = ""
+
+                while i < len(command_part):
+                    if command_part[i] == '"':
+                        if in_quotes:
+                            # End of quoted string
+                            title = current_string if not title else title
+                            description = current_string if title else current_string
+                            current_string = ""
+                            in_quotes = False
+                        else:
+                            # Start of quoted string
+                            in_quotes = True
+                            current_string = ""
+                        i += 1
+                    elif command_part[i] == ' ' and not in_quotes:
+                        if current_string:
+                            if not title:
+                                title = current_string
+                            else:
+                                # This should be part of description
+                                if description:
+                                    description += ' ' + current_string
+                                else:
+                                    description = current_string
+                        elif not title and not current_string and not in_quotes:
+                            # Skip multiple spaces before first word
+                            pass
+                        current_string = ""
+                        i += 1
+                    else:
+                        current_string += command_part[i]
+                        i += 1
+
+                # Handle remaining text after loop
+                if current_string:
+                    if not title:
+                        title = current_string
+                    else:
+                        if description:
+                            description += ' ' + current_string
+                        else:
+                            description = current_string
+
+                # If still empty, try simple split
+                if not title and not description:
+                    parts = command_part.strip().split(' ', 1)
+                    if parts:
+                        title = parts[0]
+                        if len(parts) > 1:
+                            description = parts[1]
+
+                if not title:
+                    print("Error: Title is required. Usage: add <title> [description]")
+                    continue
+
+                args = argparse.Namespace(title=title, description=description)
+                handle_add_command(task_manager, args)
+                continue
+            elif user_input.lower().startswith('update '):
+                # Handle update command with improved parsing
+                command_part = user_input[7:]  # Remove 'update ' prefix
+                parts = command_part.split()
+
+                if len(parts) < 1:
+                    print("Usage: update <id> [--title <text>] [--description <text>]")
+                    continue
+
+                try:
+                    task_id = int(parts[0])
+                except ValueError:
+                    print("Error: Task ID must be a number")
+                    continue
+
+                # Parse remaining arguments
+                title = None
+                description = None
+                i = 1
+                while i < len(parts):
+                    if parts[i] == '--title' and i + 1 < len(parts):
+                        title = parts[i + 1]
+                        if title.startswith('"') and title.endswith('"'):
+                            title = title[1:-1]
+                        i += 2
+                    elif parts[i] == '--description' and i + 1 < len(parts):
+                        description = parts[i + 1]
+                        if description.startswith('"') and description.endswith('"'):
+                            description = description[1:-1]
+                        i += 2
+                    elif parts[i].startswith('--'):
+                        print(f"Unknown option: {parts[i]}")
+                        print("Usage: update <id> [--title <text>] [--description <text>]")
+                        break
+                    else:
+                        i += 1
+                else:
+                    # Only proceed if no error occurred in the loop
+                    args = argparse.Namespace(id=task_id, title=title, description=description)
+                    handle_update_command(task_manager, args)
+                continue
+            elif user_input.lower().startswith(('delete ', 'del ')):
+                # Handle delete command (support both 'delete' and 'del')
+                command_part = user_input.split(' ', 1)
+                if len(command_part) < 2:
+                    print("Usage: delete <id> or del <id>")
+                    continue
+
+                try:
+                    task_id = int(command_part[1])
+                    args = argparse.Namespace(id=task_id)
+                    handle_delete_command(task_manager, args)
+                except ValueError:
+                    print("Error: Task ID must be a number")
+                continue
+            elif user_input.lower().startswith(('complete ', 'done ')):
+                # Handle complete command (support both 'complete' and 'done')
+                command_part = user_input.split(' ', 1)
+                if len(command_part) < 2:
+                    print("Usage: complete <id> or done <id>")
+                    continue
+
+                try:
+                    task_id = int(command_part[1])
+                    args = argparse.Namespace(id=task_id)
+                    handle_complete_command(task_manager, args)
+                except ValueError:
+                    print("Error: Task ID must be a number")
+                continue
+            elif user_input.lower().startswith(('incomplete ', 'undone ')):
+                # Handle incomplete command (support 'incomplete' and 'undone')
+                command_part = user_input.split(' ', 1)
+                if len(command_part) < 2:
+                    print("Usage: incomplete <id> or undone <id>")
+                    continue
+
+                try:
+                    task_id = int(command_part[1])
+                    args = argparse.Namespace(id=task_id)
+                    handle_incomplete_command(task_manager, args)
+                except ValueError:
+                    print("Error: Task ID must be a number")
+                continue
+            elif user_input.lower().startswith('show '):
+                # Show details of a specific task
+                command_part = user_input.split(' ', 1)
+                if len(command_part) < 2:
+                    print("Usage: show <id>")
+                    continue
+
+                try:
+                    task_id = int(command_part[1])
+                    task = task_manager.get_task_by_id(task_id)
+                    if task:
+                        status_text = "Complete" if task.status else "Incomplete"
+                        print(f"ID: {task.id}")
+                        print(f"Title: {task.title}")
+                        print(f"Description: {task.description}")
+                        print(f"Status: {status_text}")
+                    else:
+                        print(f"Error: Task with ID {task_id} not found")
+                except ValueError:
+                    print("Error: Task ID must be a number")
+                continue
+            elif user_input.lower() == 'clear':
+                # Clear all tasks
+                if not task_manager.tasks:
+                    print("No tasks to clear")
+                else:
+                    task_count = len(task_manager.tasks)
+                    task_manager.tasks.clear()
+                    task_manager.next_id = 1  # Reset ID counter
+                    print(f"Cleared {task_count} task(s). Task counter reset.")
+                continue
+            elif user_input.lower() == 'stats':
+                # Show statistics
+                total = len(task_manager.tasks)
+                if total == 0:
+                    print("No tasks available")
+                else:
+                    completed = len([t for t in task_manager.tasks if t.status])
+                    incomplete = total - completed
+                    completion_rate = (completed / total * 100) if total > 0 else 0
+
+                    print(f"Statistics:")
+                    print(f"  Total tasks: {total}")
+                    print(f"  Completed: {completed}")
+                    print(f"  Incomplete: {incomplete}")
+                    print(f"  Completion rate: {completion_rate:.1f}%")
+                continue
+            elif user_input.lower().startswith('search '):
+                # Search tasks by keyword in title or description
+                keyword = user_input[7:].strip().lower()
+                if not keyword:
+                    print("Usage: search <keyword>")
+                    continue
+
+                matches = []
+                for task in task_manager.tasks:
+                    if keyword in task.title.lower() or keyword in task.description.lower():
+                        matches.append(task)
+
+                if matches:
+                    print(f"Found {len(matches)} matching task(s):")
+                    for task in matches:
+                        status_indicator = "[X]" if task.status else "[ ]"
+                        if task.description:
+                            print(f"[{task.id}] {status_indicator} {task.title} - {task.description}")
+                        else:
+                            print(f"[{task.id}] {status_indicator} {task.title}")
+                else:
+                    print("No matching tasks found")
+                continue
+            else:
+                print(f"Unknown command: {user_input}")
+                print("Type 'help' for available commands")
+
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
+        except EOFError:
+            print("\nGoodbye!")
+            break
+
+
+def main():
+    """
+    Main function to run the Todo application.
+    Sets up the argument parser and handles commands.
+    Supports both command-line mode and interactive mode.
+    """
+    # Create the task manager instance
+    task_manager = TaskManager()
+
+    # Check if no arguments were provided (interactive mode)
+    if len(sys.argv) == 1:
+        # No command-line arguments provided, start interactive mode
+        run_interactive_mode(task_manager)
+    else:
+        # Command-line arguments provided, parse and execute
+        parser = parse_command_line_args()
+        args = parser.parse_args()
+
+        # If no command is provided, show help
+        if args.command is None:
+            parser.print_help()
+            return
+
+        # Execute the appropriate function based on the command
+        args.func(task_manager, args)
 
 
 if __name__ == "__main__":
