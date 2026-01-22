@@ -1,55 +1,146 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+Version change: 0.1.0 → 1.0.0
+Modified principles: All principles completely revised to match Phase I Todo Application requirements
+Added sections: Core Principles, Key Standards, Constraints, Forbidden Features, Success Criteria, Multi-phase Context
+Removed sections: None
+Templates requiring updates: ⚠ pending - .specify/templates/plan-template.md, .specify/templates/spec-template.md, .specify/templates/tasks-template.md
+Follow-up TODOs: None
+-->
+# Phase I - In-Memory Python Console Todo Application Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### Simplicity First
+Build only essential CRUD operations (Add, Delete, Update, View, Complete) - follow YAGNI principles and avoid feature creep until core functionality is solid.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### In-Memory Architecture
+Data storage is in-memory only with NO persistence - data is intentionally lost on exit by design for Phase I, focusing on business logic before adding complexity.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### Type Safety Assurance
+Full type hints required, leverage Python 3.13+ features, and maintain mypy strict compliance - no untyped code accepted in the codebase.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### Error Resilience
+Never crash from user input, implement graceful degradation always - all user-facing functions must handle edge cases and invalid input safely.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### Test-Driven Development
+Minimum 80% test coverage required, no feature implemented without accompanying tests - TDD approach with Red-Green-Refactor cycle strictly enforced.
 
-### [PRINCIPLE_6_NAME]
+## Key Standards
 
+### Architecture Requirements
+Clean layer separation required (UI → Services → Models) with no circular dependencies - maintain clear separation of concerns throughout the codebase.
 
-[PRINCIPLE__DESCRIPTION]
+### Code Style Compliance
+PEP 8 compliance via ruff linter, Google-style docstrings for all public functions, and 100 character line limit for improved readability.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### Data Model Specification
+Task dataclass must include id (int), title (str), description (str), completed (bool), and timestamps (datetime) fields - consistent data structure required.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### User Experience Design
+Interactive console loop with clear prompts, confirmation required for destructive actions - prioritize user clarity and prevent accidental data loss.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### Testing Framework
+pytest with pytest-cov required, mirror src/ structure in tests/ directory - maintain consistent test organization aligned with source code.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+## Constraints
+
+### Python Version Requirement
+Python 3.13+ only is required - leverage latest language features and maintain version consistency across environments.
+
+### Dependency Management
+UV package manager required for all dependency management - standardize on modern, fast Python packaging tool.
+
+### Standard Library Preference
+Minimize external dependencies, prefer standard library solutions - reduce attack surface and maintenance overhead.
+
+### State Management
+No global state allowed - pass data explicitly through function parameters to maintain clear data flow.
+
+### Task ID Management
+Sequential integers starting from 1 for Task IDs, never reused after deletion - maintain consistent and predictable ID assignment.
+
+### Development Methodology
+Spec-Driven Development required - no manual coding, all code generated via Claude Code CLI from specifications to ensure consistency.
+
+## Forbidden Features (Phase I Scope)
+
+### Persistence Limitations
+No data persistence features (files, databases, serialization) - maintain focus on core application logic without storage complexity.
+
+### Feature Restrictions
+No task priorities, categories, tags, or due dates - keep minimal feature set for Phase I foundation.
+
+### Enhancement Prohibitions
+No search, filter, or sort functionality beyond basic listing - avoid advanced features until core operations are stable.
+
+### User System Exclusions
+No user accounts or multi-user support - single-user console application only for Phase I.
+
+### Advanced Operations
+No undo/redo operations - maintain simplicity and focus on core CRUD functionality.
+
+### Configuration Constraints
+No configuration files or settings - avoid complexity around user preferences for initial phase.
+
+### Formatting Limitations
+No color/formatting libraries (plain text only) - keep UI simple and compatible across terminals.
+
+### Logging Restrictions
+No logging frameworks (use print for development only) - avoid complex logging infrastructure initially.
+
+## Success Criteria
+
+### Core Operations
+All 5 core operations functional (add, delete, update, view, complete) - ensure full CRUD functionality meets requirements.
+
+### Test Coverage
+Test coverage ≥ 80% with all tests passing - maintain high quality standards through comprehensive testing.
+
+### Type Checking
+Type checking passes with zero mypy errors - ensure type safety across the entire codebase.
+
+### Code Quality
+Code passes ruff linting with zero warnings - maintain consistent code style and best practices.
+
+### Error Handling
+Application handles all error cases gracefully without crashes - ensure robust error handling throughout.
+
+### Documentation Completeness
+Documentation complete: README.md, CLAUDE.md, AGENTS.md with spec iteration history - provide comprehensive project documentation.
+
+### Repository Structure
+Repository structure follows Spec-Kit Plus conventions - maintain consistent project organization.
+
+### Workflow Documentation
+Spec-driven workflow fully documented - ensure reproducible development process.
+
+## Multi-Phase Context
+
+### Phase I Foundation
+Current phase: In-memory console foundation - establish core architecture and patterns at console level.
+
+### Phase II Web Application
+Future phase: Full-stack web app (Next.js + FastAPI + SQLModel + Neon DB) - scale to web interface with persistent storage.
+
+### Phase III AI Integration
+Future phase: AI-powered chatbot (OpenAI ChatKit + Agents SDK + MCP) - add intelligent interaction capabilities.
+
+### Phase IV Infrastructure
+Future phase: Local K8s deployment (Docker + Minikube + Helm + kubectl-ai) - containerized orchestration setup.
+
+### Phase V Production
+Future phase: Cloud production (Kafka + Dapr + DigitalOcean DOKS) - enterprise-grade cloud deployment.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+### Amendment Process
+Changes to this constitution require explicit approval and must align with multi-phase project vision - maintain consistency across development phases.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+### Version Control Policy
+Version follows semantic versioning: MAJOR for breaking changes, MINOR for additions, PATCH for corrections - maintain clear evolution path.
+
+### Compliance Verification
+All code submissions must verify compliance with all constitution principles - automated checks required in CI/CD pipeline.
+
+**Version**: 1.0.0 | **Ratified**: 2026-01-11 | **Last Amended**: 2026-01-11
