@@ -8,7 +8,38 @@ Provides functionality to add, view, update, delete, and mark tasks as complete/
 
 import argparse
 import sys
-from typing import List, Optional
+from typing import Dict, List, Optional, Callable
+from enum import Enum
+
+
+# ==================== CUSTOM EXCEPTIONS ====================
+
+
+class TodoAppError(Exception):
+    """Base exception for Todo application errors."""
+    pass
+
+
+class TaskNotFoundError(TodoAppError):
+    """Raised when a task with given ID is not found."""
+    pass
+
+
+class ValidationError(ValueError, TodoAppError):
+    """Raised when input validation fails."""
+    pass
+
+
+# ==================== ENUMERATIONS ====================
+
+
+class TaskStatus(Enum):
+    """Task completion status."""
+    INCOMPLETE = False
+    COMPLETE = True
+
+
+# ==================== MODELS ====================
 
 
 class Task:
@@ -42,6 +73,10 @@ class Task:
         status_indicator = "[X]" if self.status else "[ ]"
         return f"[{self.id}] {status_indicator} {self.title} - {self.description}"
 
+    def __repr__(self) -> str:
+        """Return a developer-friendly representation of the task."""
+        return f"Task(id={self.id}, title='{self.title}', status={'complete' if self.status else 'incomplete'})"
+
     def to_dict(self) -> dict:
         """Convert the task to a dictionary representation."""
         return {
@@ -51,20 +86,102 @@ class Task:
             "status": self.status
         }
 
+    def set_status(self, status: bool) -> None:
+        """Update task status."""
+        self.status = status
+
+    def update(self, title: Optional[str] = None, description: Optional[str] = None) -> None:
+        """Update task fields."""
+        if title is not None:
+            self.title = title
+        if description is not None:
+            self.description = description
+
+
+# ==================== VALIDATORS ====================
+
+
+def validate_title(title: str) -> None:
+    """
+    Validate the title according to the specification.
+
+    Args:
+        title (str): The title to validate
+
+    Raises:
+        ValidationError: If title is empty or exceeds length limits
+    """
+    if not title or title.strip() == "":
+        raise ValidationError("Title cannot be empty")
+
+    if len(title) > 200:
+        raise ValidationError(f"Title too long (max 200 characters, got {len(title)})")
+
+
+def validate_description(description: str) -> None:
+    """
+    Validate the description according to the specification.
+
+    Args:
+        description (str): The description to validate
+
+    Raises:
+        ValidationError: If description exceeds length limits
+    """
+    if len(description) > 1000:
+        raise ValidationError(f"Description too long (max 1000 characters, got {len(description)})")
+
+
+# ==================== TASK MANAGER ====================
+
 
 class TaskManager:
     """
-    Manages the collection of Task objects and provides operations.
+    Manages the collection of Task objects and provides CRUD operations.
+
+    Uses dictionary for O(1) task lookups and list for maintaining insertion order.
 
     Attributes:
-        tasks (List[Task]): In-memory collection of Task objects
-        next_id (int): Counter for generating unique IDs
+        _tasks (Dict[int, Task]): Internal dictionary mapping task IDs to Task objects
+        _tasks_list (List[Task]): List for maintaining task insertion order
+        _next_id (int): Counter for generating unique IDs
     """
 
     def __init__(self):
-        """Initialize the TaskManager with an empty task list and ID counter."""
-        self.tasks: List[Task] = []
-        self.next_id = 1
+        """Initialize the TaskManager with empty collections and ID counter."""
+        self._tasks: Dict[int, Task] = {}
+        self._tasks_list: List[Task] = []
+        self._next_id = 1
+
+    @property
+    def tasks(self) -> List[Task]:
+        """Return tasks list for backward compatibility."""
+        return self._tasks_list
+
+    @property
+    def next_id(self) -> int:
+        """Return the next task ID (for backward compatibility)."""
+        return self._next_id
+
+    def _add_to_storage(self, task: Task) -> None:
+        """
+        Add task to both storage structures.
+
+        Args:
+            task (Task): The task to add
+        """
+        self._tasks[task.id] = task
+        self._tasks_list.append(task)
+
+    def _remove_from_storage(self, task: Task) -> None:
+        """
+        Remove task from both storage structures.
+
+        Args:
+            task (Task): The task to remove
+        """
+        del self._tasks[task.id]
+        self._tasks_list.remove(task)
 
     def add_task(self, title: str, description: str = "") -> Task:
         """
@@ -78,18 +195,16 @@ class TaskManager:
             Task: The newly created Task object
 
         Raises:
-            ValueError: If title is empty or exceeds length limits
+            ValidationError: If title is empty or exceeds length limits
         """
         # Validate input
         validate_title(title)
         validate_description(description)
 
-        # Create the task
-        task = Task(self.next_id, title, description, False)
-        self.tasks.append(task)
-
-        # Increment the ID counter for the next task
-        self.next_id += 1
+        # Create and store the task
+        task = Task(self._next_id, title, description, False)
+        self._add_to_storage(task)
+        self._next_id += 1
 
         return task
 
@@ -98,13 +213,13 @@ class TaskManager:
         Return all tasks in the collection.
 
         Returns:
-            List[Task]: List of all tasks
+            List[Task]: List of all tasks in insertion order
         """
-        return self.tasks
+        return self._tasks_list
 
     def get_task_by_id(self, task_id: int) -> Optional[Task]:
         """
-        Get a task by its ID.
+        Get a task by its ID with O(1) complexity.
 
         Args:
             task_id (int): The ID of the task to retrieve
@@ -112,14 +227,29 @@ class TaskManager:
         Returns:
             Optional[Task]: The task if found, None otherwise
         """
-        for task in self.tasks:
-            if task.id == task_id:
-                return task
-        return None
+        return self._tasks.get(task_id)
+
+    def _get_or_raise(self, task_id: int) -> Task:
+        """
+        Get a task by ID or raise an exception if not found.
+
+        Args:
+            task_id (int): The ID of the task to retrieve
+
+        Returns:
+            Task: The task if found
+
+        Raises:
+            TaskNotFoundError: If task is not found
+        """
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            raise TaskNotFoundError(f"Task with ID {task_id} not found")
+        return task
 
     def update_task(self, task_id: int, title: Optional[str] = None, description: Optional[str] = None) -> bool:
         """
-        Update an existing task's title and/or description.
+        Update an existing task's title and/or description with O(1) complexity.
 
         Args:
             task_id (int): The ID of the task to update
@@ -130,27 +260,24 @@ class TaskManager:
             bool: True if update was successful, False if task not found
 
         Raises:
-            ValueError: If title is provided but is empty or exceeds length limits
+            ValidationError: If provided title or description is invalid
         """
         task = self.get_task_by_id(task_id)
         if not task:
             return False
 
-        # If title is provided, validate it
+        # Validate and update fields
         if title is not None:
             validate_title(title)
-            task.title = title
-
-        # If description is provided, validate it
         if description is not None:
             validate_description(description)
-            task.description = description
 
+        task.update(title, description)
         return True
 
     def delete_task(self, task_id: int) -> bool:
         """
-        Remove a task by its ID.
+        Remove a task by its ID with O(1) dictionary lookup.
 
         Args:
             task_id (int): The ID of the task to delete
@@ -162,7 +289,27 @@ class TaskManager:
         if not task:
             return False
 
-        self.tasks.remove(task)
+        self._remove_from_storage(task)
+        return True
+
+    def set_task_status(self, task_id: int, status: bool) -> bool:
+        """
+        Set task completion status with O(1) complexity.
+
+        Consolidates complete_task and incomplete_task logic to avoid duplication.
+
+        Args:
+            task_id (int): The ID of the task to update
+            status (bool): The new status (True = complete, False = incomplete)
+
+        Returns:
+            bool: True if operation was successful, False if task not found
+        """
+        task = self.get_task_by_id(task_id)
+        if not task:
+            return False
+
+        task.set_status(status)
         return True
 
     def complete_task(self, task_id: int) -> bool:
@@ -175,12 +322,7 @@ class TaskManager:
         Returns:
             bool: True if operation was successful, False if task not found
         """
-        task = self.get_task_by_id(task_id)
-        if not task:
-            return False
-
-        task.status = True
-        return True
+        return self.set_task_status(task_id, True)
 
     def incomplete_task(self, task_id: int) -> bool:
         """
@@ -192,43 +334,66 @@ class TaskManager:
         Returns:
             bool: True if operation was successful, False if task not found
         """
-        task = self.get_task_by_id(task_id)
-        if not task:
-            return False
+        return self.set_task_status(task_id, False)
 
-        task.status = False
-        return True
+    def get_statistics(self) -> Dict[str, int | float]:
+        """
+        Calculate task statistics.
+
+        Returns:
+            Dict: Statistics including total, completed, incomplete, and completion rate
+        """
+        total = len(self._tasks_list)
+        if total == 0:
+            return {
+                "total": 0,
+                "completed": 0,
+                "incomplete": 0,
+                "completion_rate": 0.0
+            }
+
+        completed = sum(1 for task in self._tasks_list if task.status)
+        incomplete = total - completed
+        completion_rate = (completed / total * 100) if total > 0 else 0.0
+
+        return {
+            "total": total,
+            "completed": completed,
+            "incomplete": incomplete,
+            "completion_rate": completion_rate
+        }
+
+    def search_tasks(self, keyword: str) -> List[Task]:
+        """
+        Search tasks by keyword in title or description.
+
+        Args:
+            keyword (str): The keyword to search for
+
+        Returns:
+            List[Task]: List of matching tasks
+        """
+        keyword_lower = keyword.lower()
+        return [
+            task for task in self._tasks_list
+            if keyword_lower in task.title.lower() or keyword_lower in task.description.lower()
+        ]
+
+    def clear_all(self) -> int:
+        """
+        Clear all tasks and reset the ID counter.
+
+        Returns:
+            int: Number of tasks cleared
+        """
+        count = len(self._tasks_list)
+        self._tasks.clear()
+        self._tasks_list.clear()
+        self._next_id = 1
+        return count
 
 
-def validate_title(title: str) -> None:
-    """
-    Validate the title according to the specification.
-
-    Args:
-        title (str): The title to validate
-
-    Raises:
-        ValueError: If title is empty or exceeds length limits
-    """
-    if not title or title.strip() == "":
-        raise ValueError("Title cannot be empty")
-
-    if len(title) > 200:
-        raise ValueError(f"Title too long (max 200 characters, got {len(title)})")
-
-
-def validate_description(description: str) -> None:
-    """
-    Validate the description according to the specification.
-
-    Args:
-        description (str): The description to validate
-
-    Raises:
-        ValueError: If description exceeds length limits
-    """
-    if len(description) > 1000:
-        raise ValueError(f"Description too long (max 1000 characters, got {len(description)})")
+# ==================== COMMAND HANDLERS ====================
 
 
 def handle_add_command(task_manager: TaskManager, args) -> None:
@@ -242,7 +407,7 @@ def handle_add_command(task_manager: TaskManager, args) -> None:
     try:
         task = task_manager.add_task(args.title, args.description or "")
         print(f"Task added with ID: {task.id}")
-    except ValueError as e:
+    except ValidationError as e:
         print(f"Error: {e}")
 
 
@@ -291,7 +456,7 @@ def handle_update_command(task_manager: TaskManager, args) -> None:
             print(f"Task {args.id} updated successfully")
         else:
             print(f"Error: Task with ID {args.id} not found")
-    except ValueError as e:
+    except ValidationError as e:
         print(f"Error: {e}")
 
 
@@ -340,9 +505,46 @@ def handle_incomplete_command(task_manager: TaskManager, args) -> None:
         print(f"Error: Task with ID {args.id} not found")
 
 
+# ==================== COMMAND-LINE PARSER ====================
+
+
+def validate_title(title: str) -> None:
+    """
+    Validate the title according to the specification.
+
+    Args:
+        title (str): The title to validate
+
+    Raises:
+        ValidationError: If title is empty or exceeds length limits
+    """
+    if not title or title.strip() == "":
+        raise ValidationError("Title cannot be empty")
+
+    if len(title) > 200:
+        raise ValidationError(f"Title too long (max 200 characters, got {len(title)})")
+
+
+def validate_description(description: str) -> None:
+    """
+    Validate the description according to the specification.
+
+    Args:
+        description (str): The description to validate
+
+    Raises:
+        ValidationError: If description exceeds length limits
+    """
+    if len(description) > 1000:
+        raise ValidationError(f"Description too long (max 1000 characters, got {len(description)})")
+
+
 def parse_command_line_args():
     """
     Set up and parse command line arguments.
+
+    Returns:
+        argparse.ArgumentParser: Configured argument parser
     """
     parser = argparse.ArgumentParser(
         description="Todo In-Memory Python Console App",
@@ -387,405 +589,445 @@ def parse_command_line_args():
     return parser
 
 
-def display_menu():
-    """
-    Display an attractive CRUD menu for the todo application.
-    """
-    print("\n" + "=" * 70)
-    print("╔" + "═" * 68 + "╗")
-    print("║" + " " * 15 + "📝 TODO APPLICATION - CRUD MENU 📝" + " " * 16 + "║")
-    print("╚" + "═" * 68 + "╝")
-    print("\n📌 AVAILABLE OPERATIONS:")
-    print("┌" + "─" * 68 + "┐")
-    print("│ 🟢 CREATE    | add <title> [description]                         │")
-    print("│ 🔵 READ      | list, ls, show <id>                              │")
-    print("│ 🟡 UPDATE    | update <id> --title <text> --description <text>  │")
-    print("│ 🔴 DELETE    | delete <id>, del <id>                            │")
-    print("│ ✅ COMPLETE  | complete <id>, done <id>                         │")
-    print("│ ❌ INCOMPLETE| incomplete <id>, undone <id>                      │")
-    print("└" + "─" * 68 + "┘")
-    print("\n🛠️  UTILITY COMMANDS:")
-    print("┌" + "─" * 68 + "┐")
-    print("│ 📊 stats                    - View task statistics              │")
-    print("│ 🔍 search <keyword>         - Search tasks                      │")
-    print("│ 🗑️  clear                    - Clear all tasks                   │")
-    print("│ ❓ help, ?                   - Show detailed help               │")
-    print("│ 🚪 quit, exit, q            - Exit application                  │")
-    print("└" + "─" * 68 + "┘")
-    print("=" * 70 + "\n")
+# ==================== UI COMPONENTS ====================
 
 
-def display_help():
-    """
-    Display detailed help information.
-    """
-    print("\n" + "=" * 70)
-    print("📖 DETAILED COMMAND GUIDE")
-    print("=" * 70)
-    print("\n✨ CREATE OPERATIONS:")
-    print("  • add <title> [description]")
-    print("    Example: add \"Buy groceries\" \"milk, eggs, bread\"\n")
-    print("📖 READ OPERATIONS:")
-    print("  • list or ls")
-    print("    Display all tasks with their status")
-    print("  • show <id>")
-    print("    Display detailed information about a specific task\n")
-    print("✏️  UPDATE OPERATIONS:")
-    print("  • update <id> --title <text> --description <text>")
-    print("    Example: update 1 --title \"New Title\" --description \"New Description\"\n")
-    print("🗑️  DELETE OPERATIONS:")
-    print("  • delete <id> or del <id>")
-    print("    Permanently remove a task\n")
-    print("✅ MARK COMPLETE:")
-    print("  • complete <id> or done <id>")
-    print("    Mark a task as completed [X]\n")
-    print("❌ MARK INCOMPLETE:")
-    print("  • incomplete <id> or undone <id>")
-    print("    Mark a task as incomplete [ ]\n")
-    print("🛠️  UTILITY COMMANDS:")
-    print("  • stats - Show statistics (total, completed, incomplete, rate)")
-    print("  • search <keyword> - Find tasks by title or description")
-    print("  • clear - Remove all tasks and reset counter\n")
-    print("=" * 70 + "\n")
+# ==================== UI COMPONENTS ====================
 
 
-def run_interactive_mode(task_manager):
+class UIFormatter:
+    """Handles all UI display and formatting for the todo application."""
+
+    @staticmethod
+    def display_menu() -> None:
+        """Display the main CRUD menu."""
+        print("\n" + "=" * 70)
+        print("╔" + "═" * 68 + "╗")
+        print("║" + " " * 15 + "📝 TODO APPLICATION - CRUD MENU 📝" + " " * 16 + "║")
+        print("╚" + "═" * 68 + "╝")
+        print("\n📌 AVAILABLE OPERATIONS:")
+        print("┌" + "─" * 68 + "┐")
+        print("│ 🟢 CREATE    | add <title> [description]                         │")
+        print("│ 🔵 READ      | list, ls, show <id>                              │")
+        print("│ 🟡 UPDATE    | update <id> --title <text> --description <text>  │")
+        print("│ 🔴 DELETE    | delete <id>, del <id>                            │")
+        print("│ ✅ COMPLETE  | complete <id>, done <id>                         │")
+        print("│ ❌ INCOMPLETE| incomplete <id>, undone <id>                      │")
+        print("└" + "─" * 68 + "┘")
+        print("\n🛠️  UTILITY COMMANDS:")
+        print("┌" + "─" * 68 + "┐")
+        print("│ 📊 stats                    - View task statistics              │")
+        print("│ 🔍 search <keyword>         - Search tasks                      │")
+        print("│ 🗑️  clear                    - Clear all tasks                   │")
+        print("│ ❓ help, ?                   - Show detailed help               │")
+        print("│ 🚪 quit, exit, q            - Exit application                  │")
+        print("└" + "─" * 68 + "┘")
+        print("=" * 70 + "\n")
+
+    @staticmethod
+    def display_help() -> None:
+        """Display detailed help information."""
+        print("\n" + "=" * 70)
+        print("📖 DETAILED COMMAND GUIDE")
+        print("=" * 70)
+        print("\n✨ CREATE OPERATIONS:")
+        print("  • add <title> [description]")
+        print("    Example: add \"Buy groceries\" \"milk, eggs, bread\"\n")
+        print("📖 READ OPERATIONS:")
+        print("  • list or ls")
+        print("    Display all tasks with their status")
+        print("  • show <id>")
+        print("    Display detailed information about a specific task\n")
+        print("✏️  UPDATE OPERATIONS:")
+        print("  • update <id> --title <text> --description <text>")
+        print("    Example: update 1 --title \"New Title\" --description \"New Description\"\n")
+        print("🗑️  DELETE OPERATIONS:")
+        print("  • delete <id> or del <id>")
+        print("    Permanently remove a task\n")
+        print("✅ MARK COMPLETE:")
+        print("  • complete <id> or done <id>")
+        print("    Mark a task as completed [X]\n")
+        print("❌ MARK INCOMPLETE:")
+        print("  • incomplete <id> or undone <id>")
+        print("    Mark a task as incomplete [ ]\n")
+        print("🛠️  UTILITY COMMANDS:")
+        print("  • stats - Show statistics (total, completed, incomplete, rate)")
+        print("  • search <keyword> - Find tasks by title or description")
+        print("  • clear - Remove all tasks and reset counter\n")
+        print("=" * 70 + "\n")
+
+    @staticmethod
+    def display_tasks(tasks: List[Task]) -> None:
+        """
+        Display all tasks with statistics.
+
+        Args:
+            tasks (List[Task]): Tasks to display
+        """
+        if not tasks:
+            print("\n📭 No tasks available. Start by adding one!")
+            return
+
+        print("\n" + "─" * 70)
+        print("📋 YOUR TASKS:")
+        print("─" * 70)
+        for task in tasks:
+            status_indicator = "✅" if task.status else "⭕"
+            status_text = "Done" if task.status else "Pending"
+            desc_text = f" | {task.description}" if task.description else ""
+            print(f"  {status_indicator} [{task.id}] {task.title}{desc_text} ({status_text})")
+
+        # Calculate and display statistics
+        total = len(tasks)
+        completed = sum(1 for t in tasks if t.status)
+        incomplete = total - completed
+        completion_rate = (completed / total * 100) if total > 0 else 0
+        print("─" * 70)
+        print(f"  📊 Total: {total} | ✅ Completed: {completed} | ⭕ Pending: {incomplete} | Rate: {completion_rate:.0f}%")
+        print("─" * 70 + "\n")
+
+    @staticmethod
+    def display_task_detail(task: Task) -> None:
+        """
+        Display detailed information about a task.
+
+        Args:
+            task (Task): The task to display
+        """
+        status_text = "✅ Complete" if task.status else "⭕ Incomplete"
+        print("\n" + "─" * 70)
+        print(f"📝 TASK DETAILS (ID: {task.id})")
+        print("─" * 70)
+        print(f"  Title:       {task.title}")
+        print(f"  Description: {task.description if task.description else '(No description)'}")
+        print(f"  Status:      {status_text}")
+        print("─" * 70 + "\n")
+
+    @staticmethod
+    def display_statistics(stats: Dict) -> None:
+        """
+        Display task statistics.
+
+        Args:
+            stats (Dict): Statistics dictionary
+        """
+        print("\n" + "─" * 70)
+        print("📊 TASK STATISTICS")
+        print("─" * 70)
+        print(f"  Total Tasks:    {stats['total']}")
+        print(f"  ✅ Completed:   {stats['completed']}")
+        print(f"  ⭕ Incomplete:  {stats['incomplete']}")
+        print(f"  📈 Completion Rate: {stats['completion_rate']:.1f}%")
+        print("─" * 70 + "\n")
+
+    @staticmethod
+    def display_search_results(keyword: str, matches: List[Task]) -> None:
+        """
+        Display search results.
+
+        Args:
+            keyword (str): The search keyword
+            matches (List[Task]): Matching tasks
+        """
+        if matches:
+            print(f"\n🔍 Found {len(matches)} matching task(s):")
+            print("─" * 70)
+            for task in matches:
+                status_indicator = "✅" if task.status else "⭕"
+                desc_text = f" | {task.description}" if task.description else ""
+                print(f"  {status_indicator} [{task.id}] {task.title}{desc_text}")
+            print("─" * 70 + "\n")
+        else:
+            print("\n🔍 No matching tasks found\n")
+
+
+# ==================== INTERACTIVE MODE ====================
+
+
+class InteractiveCommandHandler:
+    """Handles all interactive mode commands with O(1) lookups."""
+
+    def __init__(self, task_manager: TaskManager):
+        """Initialize the handler with a task manager instance."""
+        self.task_manager = task_manager
+        self.ui = UIFormatter()
+
+    def handle_add(self, args: str) -> None:
+        """Handle add command."""
+        if not args.strip():
+            print("Error: Title is required. Usage: add <title> [description]")
+            return
+
+        parts = self._parse_quoted_input(args)
+        if not parts:
+            print("Error: Title is required. Usage: add <title> [description]")
+            return
+
+        title = parts[0]
+        description = parts[1] if len(parts) > 1 else ""
+
+        try:
+            task = self.task_manager.add_task(title, description)
+            print(f"\n✨ Task added successfully!")
+            print(f"   ID: {task.id} | Title: {task.title}")
+            if description:
+                print(f"   Description: {task.description}")
+            print()
+        except ValidationError as e:
+            print(f"❌ Error: {e}\n")
+
+    def handle_update(self, args: str) -> None:
+        """Handle update command."""
+        parts = args.split()
+        if not parts:
+            print("Usage: update <id> [--title <text>] [--description <text>]")
+            return
+
+        try:
+            task_id = int(parts[0])
+        except ValueError:
+            print("Error: Task ID must be a number")
+            return
+
+        title = None
+        description = None
+
+        # Parse optional flags
+        i = 1
+        while i < len(parts):
+            if parts[i] == '--title' and i + 1 < len(parts):
+                title = parts[i + 1].strip('"')
+                i += 2
+            elif parts[i] == '--description' and i + 1 < len(parts):
+                description = parts[i + 1].strip('"')
+                i += 2
+            else:
+                i += 1
+
+        try:
+            success = self.task_manager.update_task(task_id, title, description)
+            if success:
+                task = self.task_manager.get_task_by_id(task_id)
+                print(f"\n✏️  Task {task_id} updated successfully!")
+                print(f"   Title: {task.title}")
+                print(f"   Description: {task.description}\n")
+            else:
+                print(f"❌ Error: Task with ID {task_id} not found\n")
+        except ValidationError as e:
+            print(f"❌ Error: {e}\n")
+
+    def handle_delete(self, args: str) -> None:
+        """Handle delete command."""
+        if not args.strip():
+            print("Usage: delete <id> or del <id>")
+            return
+
+        try:
+            task_id = int(args.strip())
+        except ValueError:
+            print("Error: Task ID must be a number")
+            return
+
+        task = self.task_manager.get_task_by_id(task_id)
+        if task:
+            success = self.task_manager.delete_task(task_id)
+            if success:
+                print(f"\n🗑️  Task {task_id} deleted successfully!")
+                print(f"   Removed: {task.title}\n")
+            else:
+                print(f"❌ Error: Could not delete task {task_id}\n")
+        else:
+            print(f"❌ Error: Task with ID {task_id} not found\n")
+
+    def handle_complete(self, args: str) -> None:
+        """Handle complete command."""
+        if not args.strip():
+            print("Usage: complete <id> or done <id>")
+            return
+
+        try:
+            task_id = int(args.strip())
+        except ValueError:
+            print("Error: Task ID must be a number")
+            return
+
+        task = self.task_manager.get_task_by_id(task_id)
+        if task:
+            success = self.task_manager.complete_task(task_id)
+            if success:
+                print(f"\n✅ Task {task_id} marked as complete!")
+                print(f"   {task.title}\n")
+            else:
+                print(f"❌ Error: Could not mark task {task_id} as complete\n")
+        else:
+            print(f"❌ Error: Task with ID {task_id} not found\n")
+
+    def handle_incomplete(self, args: str) -> None:
+        """Handle incomplete command."""
+        if not args.strip():
+            print("Usage: incomplete <id> or undone <id>")
+            return
+
+        try:
+            task_id = int(args.strip())
+        except ValueError:
+            print("Error: Task ID must be a number")
+            return
+
+        task = self.task_manager.get_task_by_id(task_id)
+        if task:
+            success = self.task_manager.incomplete_task(task_id)
+            if success:
+                print(f"\n⭕ Task {task_id} marked as incomplete!")
+                print(f"   {task.title}\n")
+            else:
+                print(f"❌ Error: Could not mark task {task_id} as incomplete\n")
+        else:
+            print(f"❌ Error: Task with ID {task_id} not found\n")
+
+    def handle_show(self, args: str) -> None:
+        """Handle show command."""
+        if not args.strip():
+            print("Usage: show <id>")
+            return
+
+        try:
+            task_id = int(args.strip())
+        except ValueError:
+            print("Error: Task ID must be a number")
+            return
+
+        task = self.task_manager.get_task_by_id(task_id)
+        if task:
+            self.ui.display_task_detail(task)
+        else:
+            print(f"❌ Error: Task with ID {task_id} not found\n")
+
+    def handle_search(self, args: str) -> None:
+        """Handle search command."""
+        if not args.strip():
+            print("Usage: search <keyword>")
+            return
+
+        keyword = args.strip()
+        matches = self.task_manager.search_tasks(keyword)
+        self.ui.display_search_results(keyword, matches)
+
+    def handle_clear(self) -> None:
+        """Handle clear command."""
+        if not self.task_manager.tasks:
+            print("\n📭 No tasks to clear\n")
+        else:
+            count = self.task_manager.clear_all()
+            print(f"\n🗑️  Successfully cleared {count} task(s)!")
+            print("   Task counter has been reset.\n")
+
+    def handle_stats(self) -> None:
+        """Handle stats command."""
+        if not self.task_manager.tasks:
+            print("\n📭 No tasks available\n")
+        else:
+            stats = self.task_manager.get_statistics()
+            self.ui.display_statistics(stats)
+
+    def handle_list(self) -> None:
+        """Handle list command."""
+        tasks = self.task_manager.list_tasks()
+        self.ui.display_tasks(tasks)
+
+    @staticmethod
+    def _parse_quoted_input(text: str) -> List[str]:
+        """
+        Parse quoted strings from input.
+
+        Args:
+            text (str): Input text with potential quoted strings
+
+        Returns:
+            List[str]: List of parsed arguments
+        """
+        result = []
+        current = ""
+        in_quotes = False
+
+        for char in text:
+            if char == '"':
+                in_quotes = not in_quotes
+            elif char == ' ' and not in_quotes:
+                if current:
+                    result.append(current)
+                    current = ""
+            else:
+                current += char
+
+        if current:
+            result.append(current)
+
+        return result
+
+
+def run_interactive_mode(task_manager: TaskManager) -> None:
     """
     Run the interactive mode where users can enter commands continuously.
-    Enhanced with better parsing, command history, and user experience.
+
+    Args:
+        task_manager (TaskManager): The task manager instance
     """
     print("\n" + "╔" + "═" * 68 + "╗")
     print("║" + " " * 10 + "🚀 Welcome to Todo Application - Interactive Mode 🚀" + " " * 5 + "║")
     print("╚" + "═" * 68 + "╝\n")
-    
-    # Display the menu immediately
-    display_menu()
-    
+
+    formatter = UIFormatter()
+    formatter.display_menu()
+
     print("💡 Type 'help' for detailed guide, 'quit' to exit")
     print("-" * 70)
 
-    # Command history for reference (not actually storing but showing the concept)
-    command_history = []
+    handler = InteractiveCommandHandler(task_manager)
+
+    # Command dispatcher mapping
+    command_dispatcher: Dict[str, Callable[[str], None]] = {
+        'list': lambda args: handler.handle_list(),
+        'ls': lambda args: handler.handle_list(),
+        'add': handler.handle_add,
+        'update': handler.handle_update,
+        'delete': handler.handle_delete,
+        'del': handler.handle_delete,
+        'complete': handler.handle_complete,
+        'done': handler.handle_complete,
+        'incomplete': handler.handle_incomplete,
+        'undone': handler.handle_incomplete,
+        'show': handler.handle_show,
+        'search': handler.handle_search,
+        'stats': lambda args: handler.handle_stats(),
+        'clear': lambda args: handler.handle_clear(),
+        'help': lambda args: formatter.display_help(),
+        '?': lambda args: formatter.display_help(),
+        'menu': lambda args: formatter.display_menu(),
+    }
 
     while True:
         try:
-            # Get user input
             user_input = input("todo> ").strip()
-
-            # Add to command history if not empty
-            if user_input:
-                command_history.append(user_input)
 
             if not user_input:
                 continue
 
-            # Handle special commands
+            # Handle quitting
             if user_input.lower() in ['quit', 'exit', 'q']:
                 print("\n👋 Thank you for using Todo App. Goodbye!")
                 break
-            elif user_input.lower() in ['help', '?']:
-                display_help()
-                continue
-            elif user_input.lower() in ['menu']:
-                display_menu()
-                continue
-            elif user_input.lower() in ['list', 'ls']:
-                # Handle list command
-                args = argparse.Namespace()
-                tasks = task_manager.list_tasks()
-                
-                if not tasks:
-                    print("\n📭 No tasks available. Start by adding one!")
-                else:
-                    print("\n" + "─" * 70)
-                    print("📋 YOUR TASKS:")
-                    print("─" * 70)
-                    for task in tasks:
-                        status_indicator = "✅" if task.status else "⭕"
-                        status_text = "Done" if task.status else "Pending"
-                        desc_text = f" | {task.description}" if task.description else ""
-                        print(f"  {status_indicator} [{task.id}] {task.title}{desc_text} ({status_text})")
-                    
-                    # Show statistics after listing
-                    total = len(tasks)
-                    completed = len([t for t in tasks if t.status])
-                    incomplete = total - completed
-                    completion_rate = (completed / total * 100) if total > 0 else 0
-                    print("─" * 70)
-                    print(f"  📊 Total: {total} | ✅ Completed: {completed} | ⭕ Pending: {incomplete} | Rate: {completion_rate:.0f}%")
-                    print("─" * 70 + "\n")
-                continue
-            elif user_input.lower().startswith('add '):
-                # Handle add command - parse quoted strings properly
-                command_part = user_input[4:]  # Remove 'add ' prefix
-                title = ""
-                description = ""
 
-                # Parse quoted strings properly
-                i = 0
-                in_quotes = False
-                current_string = ""
+            # Parse command and arguments
+            command_parts = user_input.split(' ', 1)
+            command = command_parts[0].lower()
+            args = command_parts[1] if len(command_parts) > 1 else ""
 
-                while i < len(command_part):
-                    if command_part[i] == '"':
-                        if in_quotes:
-                            # End of quoted string
-                            title = current_string if not title else title
-                            description = current_string if title else current_string
-                            current_string = ""
-                            in_quotes = False
-                        else:
-                            # Start of quoted string
-                            in_quotes = True
-                            current_string = ""
-                        i += 1
-                    elif command_part[i] == ' ' and not in_quotes:
-                        if current_string:
-                            if not title:
-                                title = current_string
-                            else:
-                                # This should be part of description
-                                if description:
-                                    description += ' ' + current_string
-                                else:
-                                    description = current_string
-                        elif not title and not current_string and not in_quotes:
-                            # Skip multiple spaces before first word
-                            pass
-                        current_string = ""
-                        i += 1
-                    else:
-                        current_string += command_part[i]
-                        i += 1
-
-                # Handle remaining text after loop
-                if current_string:
-                    if not title:
-                        title = current_string
-                    else:
-                        if description:
-                            description += ' ' + current_string
-                        else:
-                            description = current_string
-
-                # If still empty, try simple split
-                if not title and not description:
-                    parts = command_part.strip().split(' ', 1)
-                    if parts:
-                        title = parts[0]
-                        if len(parts) > 1:
-                            description = parts[1]
-
-                if not title:
-                    print("Error: Title is required. Usage: add <title> [description]")
-                    continue
-
-                args = argparse.Namespace(title=title, description=description)
-                try:
-                    task = task_manager.add_task(title, description)
-                    print(f"\n✨ Task added successfully!")
-                    print(f"   ID: {task.id} | Title: {task.title}")
-                    if description:
-                        print(f"   Description: {task.description}")
-                    print()
-                except ValueError as e:
-                    print(f"❌ Error: {e}\n")
-                continue
-            elif user_input.lower().startswith('update '):
-                # Handle update command with improved parsing
-                command_part = user_input[7:]  # Remove 'update ' prefix
-                parts = command_part.split()
-
-                if len(parts) < 1:
-                    print("Usage: update <id> [--title <text>] [--description <text>]")
-                    continue
-
-                try:
-                    task_id = int(parts[0])
-                except ValueError:
-                    print("Error: Task ID must be a number")
-                    continue
-
-                # Parse remaining arguments
-                title = None
-                description = None
-                i = 1
-                while i < len(parts):
-                    if parts[i] == '--title' and i + 1 < len(parts):
-                        title = parts[i + 1]
-                        if title.startswith('"') and title.endswith('"'):
-                            title = title[1:-1]
-                        i += 2
-                    elif parts[i] == '--description' and i + 1 < len(parts):
-                        description = parts[i + 1]
-                        if description.startswith('"') and description.endswith('"'):
-                            description = description[1:-1]
-                        i += 2
-                    elif parts[i].startswith('--'):
-                        print(f"Unknown option: {parts[i]}")
-                        print("Usage: update <id> [--title <text>] [--description <text>]")
-                        break
-                    else:
-                        i += 1
-                else:
-                    # Only proceed if no error occurred in the loop
-                    try:
-                        success = task_manager.update_task(task_id, title, description)
-                        if success:
-                            task = task_manager.get_task_by_id(task_id)
-                            print(f"\n✏️  Task {task_id} updated successfully!")
-                            print(f"   Title: {task.title}")
-                            print(f"   Description: {task.description}\n")
-                        else:
-                            print(f"❌ Error: Task with ID {task_id} not found\n")
-                    except ValueError as e:
-                        print(f"❌ Error: {e}\n")
-                continue
-            elif user_input.lower().startswith(('delete ', 'del ')):
-                # Handle delete command (support both 'delete' and 'del')
-                command_part = user_input.split(' ', 1)
-                if len(command_part) < 2:
-                    print("Usage: delete <id> or del <id>")
-                    continue
-
-                try:
-                    task_id = int(command_part[1])
-                    task = task_manager.get_task_by_id(task_id)
-                    if task:
-                        success = task_manager.delete_task(task_id)
-                        if success:
-                            print(f"\n🗑️  Task {task_id} deleted successfully!")
-                            print(f"   Removed: {task.title}\n")
-                        else:
-                            print(f"❌ Error: Could not delete task {task_id}\n")
-                    else:
-                        print(f"❌ Error: Task with ID {task_id} not found\n")
-                except ValueError:
-                    print("Error: Task ID must be a number\n")
-                continue
-            elif user_input.lower().startswith(('complete ', 'done ')):
-                # Handle complete command (support both 'complete' and 'done')
-                command_part = user_input.split(' ', 1)
-                if len(command_part) < 2:
-                    print("Usage: complete <id> or done <id>")
-                    continue
-
-                try:
-                    task_id = int(command_part[1])
-                    task = task_manager.get_task_by_id(task_id)
-                    if task:
-                        success = task_manager.complete_task(task_id)
-                        if success:
-                            print(f"\n✅ Task {task_id} marked as complete!")
-                            print(f"   {task.title}\n")
-                        else:
-                            print(f"❌ Error: Could not mark task {task_id} as complete\n")
-                    else:
-                        print(f"❌ Error: Task with ID {task_id} not found\n")
-                except ValueError:
-                    print("Error: Task ID must be a number\n")
-                continue
-            elif user_input.lower().startswith(('incomplete ', 'undone ')):
-                # Handle incomplete command (support 'incomplete' and 'undone')
-                command_part = user_input.split(' ', 1)
-                if len(command_part) < 2:
-                    print("Usage: incomplete <id> or undone <id>")
-                    continue
-
-                try:
-                    task_id = int(command_part[1])
-                    task = task_manager.get_task_by_id(task_id)
-                    if task:
-                        success = task_manager.incomplete_task(task_id)
-                        if success:
-                            print(f"\n⭕ Task {task_id} marked as incomplete!")
-                            print(f"   {task.title}\n")
-                        else:
-                            print(f"❌ Error: Could not mark task {task_id} as incomplete\n")
-                    else:
-                        print(f"❌ Error: Task with ID {task_id} not found\n")
-                except ValueError:
-                    print("Error: Task ID must be a number\n")
-                continue
-            elif user_input.lower().startswith('show '):
-                # Show details of a specific task
-                command_part = user_input.split(' ', 1)
-                if len(command_part) < 2:
-                    print("Usage: show <id>")
-                    continue
-
-                try:
-                    task_id = int(command_part[1])
-                    task = task_manager.get_task_by_id(task_id)
-                    if task:
-                        status_text = "✅ Complete" if task.status else "⭕ Incomplete"
-                        print("\n" + "─" * 70)
-                        print(f"📝 TASK DETAILS (ID: {task.id})")
-                        print("─" * 70)
-                        print(f"  Title:       {task.title}")
-                        print(f"  Description: {task.description if task.description else '(No description)'}")
-                        print(f"  Status:      {status_text}")
-                        print("─" * 70 + "\n")
-                    else:
-                        print(f"❌ Error: Task with ID {task_id} not found\n")
-                except ValueError:
-                    print("Error: Task ID must be a number\n")
-                continue
-            elif user_input.lower() == 'clear':
-                # Clear all tasks
-                if not task_manager.tasks:
-                    print("\n📭 No tasks to clear\n")
-                else:
-                    task_count = len(task_manager.tasks)
-                    task_manager.tasks.clear()
-                    task_manager.next_id = 1  # Reset ID counter
-                    print(f"\n🗑️  Successfully cleared {task_count} task(s)!")
-                    print("   Task counter has been reset.\n")
-                continue
-            elif user_input.lower() == 'stats':
-                # Show statistics
-                total = len(task_manager.tasks)
-                if total == 0:
-                    print("\n📭 No tasks available\n")
-                else:
-                    completed = len([t for t in task_manager.tasks if t.status])
-                    incomplete = total - completed
-                    completion_rate = (completed / total * 100) if total > 0 else 0
-
-                    print("\n" + "─" * 70)
-                    print("📊 TASK STATISTICS")
-                    print("─" * 70)
-                    print(f"  Total Tasks:    {total}")
-                    print(f"  ✅ Completed:   {completed}")
-                    print(f"  ⭕ Incomplete:  {incomplete}")
-                    print(f"  📈 Completion Rate: {completion_rate:.1f}%")
-                    print("─" * 70 + "\n")
-                continue
-            elif user_input.lower().startswith('search '):
-                # Search tasks by keyword in title or description
-                keyword = user_input[7:].strip().lower()
-                if not keyword:
-                    print("Usage: search <keyword>")
-                    continue
-
-                matches = []
-                for task in task_manager.tasks:
-                    if keyword in task.title.lower() or keyword in task.description.lower():
-                        matches.append(task)
-
-                if matches:
-                    print(f"\n🔍 Found {len(matches)} matching task(s):")
-                    print("─" * 70)
-                    for task in matches:
-                        status_indicator = "✅" if task.status else "⭕"
-                        desc_text = f" | {task.description}" if task.description else ""
-                        print(f"  {status_indicator} [{task.id}] {task.title}{desc_text}")
-                    print("─" * 70 + "\n")
-                else:
-                    print("\n🔍 No matching tasks found\n")
-                continue
+            # Execute command
+            if command in command_dispatcher:
+                command_dispatcher[command](args)
             else:
-                print(f"❌ Unknown command: '{user_input}'")
+                print(f"❌ Unknown command: '{command}'")
                 print("💡 Type 'help' for detailed guide or 'menu' to see available operations\n")
 
         except KeyboardInterrupt:
@@ -796,18 +1038,21 @@ def run_interactive_mode(task_manager):
             break
 
 
+# ==================== MAIN APPLICATION ====================
+
+
 def main():
     """
     Main function to run the Todo application.
-    Sets up the argument parser and handles commands.
-    Supports both command-line mode and interactive mode.
+
+    Supports both command-line mode and interactive mode:
+    - Interactive mode: Run without arguments
+    - Command-line mode: Run with specific commands
     """
-    # Create the task manager instance
     task_manager = TaskManager()
 
     # Check if no arguments were provided (interactive mode)
     if len(sys.argv) == 1:
-        # No command-line arguments provided, start interactive mode
         run_interactive_mode(task_manager)
     else:
         # Command-line arguments provided, parse and execute
